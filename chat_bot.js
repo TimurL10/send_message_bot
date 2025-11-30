@@ -149,4 +149,6 @@ async function main() {
   console.log("🤖 Bot started!");
 }
 
+main();
+
 module.exports = { main,downloadPhotos };

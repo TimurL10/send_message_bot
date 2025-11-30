@@ -541,3 +541,5 @@ try {
         console.error('Ошибка:', e);
     }
 })();
+
+module.exports = { downloadPhotos };
