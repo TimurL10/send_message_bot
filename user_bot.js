@@ -5,6 +5,8 @@ const { Api } = require("telegram/tl");
 const input = require("input");
 const fs = require("fs");
 const path = require("path");
+const channelNamePart = "Биполярка"; 
+let client;
 
 // ==== ENV ====
 const apiId = Number(process.env.TG_API_ID);
@@ -116,14 +118,42 @@ async function findChannel(client, searchPart) {
 }
 
 
+async function sendObjectToChannel(obj) {
+    // 1. Ищем каналы по части имени
+    const dialogs = await client.getDialogs({});
+    
+    const target = dialogs.find(d =>
+        d.entity?.title?.toLowerCase().includes(channelNamePart.toLowerCase())
+    );
+
+    if (!target) {
+        throw new Error(`Канал с именем, содержащим "${channelNamePart}" не найден`);
+    }
+
+    // 2. Преобразуем объект в красивый текст
+    let text;
+    try {
+        text = "```json\n" + JSON.stringify(obj, null, 2) + "\n```";  
+    } catch (e) {
+        text = "Не удалось сериализовать объект";
+    }
+
+    // 3. Отправляем сообщение
+    await client.sendMessage(target.entity, {
+        message: text,
+        parseMode: "markdown"
+    });
+
+    console.log(`📨 Объект отправлен в канал: ${target.entity.title}`);
+}
+
 
 async function download_media_from_chanel() {
     try {
-        const client = await login();
 
-        const searchName = "Биполярка"; // канал ("durov" или id)
+        client = await login();        
 
-        const channelEntity = await findChannel(client, searchName);
+        const channelEntity = await findChannel(client, channelNamePart);
 
         if (!channelEntity) {
             console.log("Канал не найден");
@@ -142,5 +172,6 @@ async function download_media_from_chanel() {
 
 
 module.exports = {
-    download_media_from_chanel
+    download_media_from_chanel,
+    sendObjectToChannel
 }

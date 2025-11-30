@@ -13,6 +13,7 @@ const KEY = "pPdvu2PwVJduFqdT86aCSWe5xuyqupWzI9pIUsz2hlMrzbOqLyjxLqcWlf3PJWele71
 const SECRET = "RKfooVzmrETYz3S1V7Ard1ZbhCLHvO9cbCh1g1j6OF154wTGmthOArqmA6ElZEzAhEFrL49nFjahRfXgXA";
 const HOST = "https://open-api.bingx.com";
 const user_bot = require('./user_bot');
+const chat_bot = require('./chat_bot');
 
 async function ocrImage(imagePath, langs = 'rus+eng') {
   // 2-й аргумент — количество потоков; опции можно передать 3-м аргументом
@@ -81,7 +82,10 @@ async function placeOrder(orderParams) {
     console.log(url)   
     const res = await axios.post(url, null, { headers });
     console.log(res.data);
-    return res.data?.status;
+
+    await user_bot.sendObjectToChannel(res.data); // печать статуса ордера в канал 
+
+    return res.data?.code;
 }
 
 async function cancelSpotOrder(params) {
@@ -495,13 +499,13 @@ try {
     quantity: "0.0001",
     timeInForce: "GTC"
   };
-   
+      
+
+    
+    let arr_downloaded_files = await user_bot.download_media_from_chanel();    
     
     
-    let arr_downloaded_files = await user_bot.download_media_from_chanel();   
-    
-    
-    for (let file of arr_downloaded_files) {
+    for (let file of arr_downloaded_files || []) {
       //await new Promise (r => setTimeout(r, 1_000));
       const img = path.resolve(`./pict/${file}`);
       const text = await ocrImage(img);
@@ -516,6 +520,7 @@ try {
 
       let first_order =  await buildEntryOrderFromSignal(signal, options = {});
       let order_status = await placeOrder(first_order);
+
       //if (order_status == 'FILLED') {
       let takes_orders = await buildTakeProfitOrdersFromSignal(signal, options = {});
       for (let order of takes_orders) {
