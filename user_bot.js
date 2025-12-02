@@ -5,7 +5,7 @@ const { Api } = require("telegram/tl");
 const input = require("input");
 const fs = require("fs");
 const path = require("path");
-const channelNamePart = "Биполярка"; 
+const channelNamePart = "Биполярка_стоматолога"; 
 let client;
 
 // ==== ENV ====

@@ -13,7 +13,7 @@ const KEY = "pPdvu2PwVJduFqdT86aCSWe5xuyqupWzI9pIUsz2hlMrzbOqLyjxLqcWlf3PJWele71
 const SECRET = "RKfooVzmrETYz3S1V7Ard1ZbhCLHvO9cbCh1g1j6OF154wTGmthOArqmA6ElZEzAhEFrL49nFjahRfXgXA";
 const HOST = "https://open-api.bingx.com";
 const user_bot = require('./user_bot');
-const chat_bot = require('./chat_bot');
+
 
 async function ocrImage(imagePath, langs = 'rus+eng') {
   // 2-й аргумент — количество потоков; опции можно передать 3-м аргументом
@@ -541,5 +541,3 @@ try {
         console.error('Ошибка:', e);
     }
 })();
-
-module.exports = { downloadPhotos };
