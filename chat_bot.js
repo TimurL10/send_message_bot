@@ -159,7 +159,7 @@ const menu = Markup.keyboard([
 
 // /start
 bot.start((ctx) => {
-  ctx.reply("Привет! Выбери кнопку:", menu);
+  ctx.reply("Привет! Выбери кнопку:", menu);  
 });
 
 // Кнопки
@@ -172,6 +172,9 @@ async function main() {
     console.log("Запуск бота...");
     bot.launch();
     console.log("🤖 БОТ ЗАПУЩЕН!");
+    let ip = await api.getPublicIP();
+    console.log(ip);
+
     
 }
 main();

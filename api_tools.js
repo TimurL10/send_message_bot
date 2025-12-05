@@ -1,10 +1,6 @@
 const HOST = "https://open-api.bingx.com";
-const CryptoJS = require('crypto-js');
 const crypto = require("crypto");
 require('dotenv').config();
-const input = require('input');
-const fs = require('fs');
-const path = require('path');
 const axios = require('axios');
 
 let KEY;
@@ -16,7 +12,7 @@ async function parseSignalText(text) {
 
     KEY = process.env.KEY;
     SECRET = process.env.SECRET;
-    
+
   const lines = text
     .split(/\r?\n/)
     .map(l => l.trim())
@@ -402,6 +398,21 @@ async function closeAllOpenOrders() {
 }
 
 
+async function getPublicIP() {
+  try {
+    const response = await axios.get("https://api.ipify.org?format=json");
+    return response.data.ip;
+  } catch (error) {
+    console.error("Failed to get public IP:", error.message);
+    throw error;
+  }
+}
+
+// пример использования
+getPublicIP().then(ip => console.log("Public IP:", ip));
+
+
+
 
 
 module.exports = {
@@ -412,5 +423,6 @@ module.exports = {
     buildTakeProfitOrdersFromSignal,
     buildStopLossOrderFromSignal,
     closeAllPositions,
-    closeAllOpenOrders
+    closeAllOpenOrders,
+    getPublicIP
 }
