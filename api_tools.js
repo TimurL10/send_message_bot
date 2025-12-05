@@ -1,5 +1,3 @@
-const KEY = "pPdvu2PwVJduFqdT86aCSWe5xuyqupWzI9pIUsz2hlMrzbOqLyjxLqcWlf3PJWele71Wfz7Yn2J8Iq1Mu0XA";
-const SECRET = "RKfooVzmrETYz3S1V7Ard1ZbhCLHvO9cbCh1g1j6OF154wTGmthOArqmA6ElZEzAhEFrL49nFjahRfXgXA";
 const HOST = "https://open-api.bingx.com";
 const CryptoJS = require('crypto-js');
 const crypto = require("crypto");
@@ -9,8 +7,16 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
+let KEY;
+let SECRET;
+
+
 
 async function parseSignalText(text) {
+
+    KEY = process.env.KEY;
+    SECRET = process.env.SECRET;
+    
   const lines = text
     .split(/\r?\n/)
     .map(l => l.trim())
@@ -198,7 +204,7 @@ async function placeOrder(orderParams) {
     const params = { ...orderParams, timestamp, recvWindow: 5000 };
 
     const query = sign(params, SECRET);
-    const url = `${HOST}/openApi/swap/v2/trade/order/test?${query}`;
+    const url = `${HOST}/openApi/swap/v2/trade/order?${query}`;
 
     const headers = { "X-BX-APIKEY": KEY };
     console.log(url)   
