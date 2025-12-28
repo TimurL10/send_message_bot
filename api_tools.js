@@ -1,17 +1,82 @@
 const HOST = "https://open-api.bingx.com";
+const WS_URL = "wss://open-api-swap.bingx.com/swap-market ";
 const crypto = require("crypto");
 require('dotenv').config();
 const axios = require('axios');
-
+const WebSocket = require("ws");
 let KEY;
 let SECRET;
+let ws;
 
+async function init() {
+    KEY = process.env.KEY;
+    SECRET = process.env.SECRET;
+}
+
+// подписаться на обновление ордеров
+async function subscribeOrderUpdates(onOrderFilled) {
+
+  function sign(message) {
+    return crypto.createHmac("sha256", SECRET).update(message).digest("hex");
+  }
+
+  const ws = new WebSocket(WS_URL);
+
+  ws.on("open", () => {
+    console.log("WS Connected to BingX");
+
+    const timestamp = Date.now().toString();
+    const signature = sign(timestamp + KEY);
+
+    // Авторизация
+    ws.send(JSON.stringify({
+      op: "auth",
+      args: {
+        apiKey: KEY,
+        timestamp,
+        signature
+      }
+    }));
+
+    // Подписка на ордера
+    ws.send(JSON.stringify({
+      op: "subscribe",
+      args: ["order"]
+    }));
+  });
+
+  ws.on("message", raw => {
+    const data = JSON.parse(raw);
+
+    // фильтруем только ордер-ивенты
+    if (data.e !== "order") return;
+
+    const event = data.data; 
+
+    // если ордер исполнен
+    if (event.status === "FILLED") {
+      console.log("ORDER FILLED:", event.orderId);
+
+      // вызываем callback
+      if (onOrderFilled) onOrderFilled(event);
+    }
+  });
+
+  ws.on("close", () => {
+    console.log("WS Closed, reconnecting...");
+    setTimeout(() => subscribeOrderUpdates(onOrderFilled), 2000);
+  });
+
+  ws.on("error", (err) => {
+    console.log("WS Error:", err.message);
+  });
+}
 
 
 async function parseSignalText(text) {
 
-    KEY = process.env.KEY;
-    SECRET = process.env.SECRET;
+  if (!text)
+    return;  
 
   const lines = text
     .split(/\r?\n/)
@@ -78,47 +143,32 @@ async function parseSignalText(text) {
 
    // ---------- TAKE PROFITS ----------
   // 1) сначала пробуем найти строку со словом "Тейки"/"Тейк"
-  let tpLine = lines.find(l => /Тейки|Тейк|Teuku/i.test(l));
+  let startIndex = lines.findIndex(l => /Тейки|Тейк|Teuku/i.test(l));
 
-  // 2) если OCR превратил "Тейки" в "Teuku" и т.п. — делаем fallback:
-  // ищем любую строку, где есть >= 2 чисел, но это не "Точка входа", не "Стоп", не "Банк" и т.д.
-  if (!tpLine) {
-    tpLine = lines.find(l => {
-      const lower = l.toLowerCase();
+  if (startIndex !== -1) {
+    let tpText = lines[startIndex];
 
-      // отфильтровываем строки, где точно не тейки
-      if (
-        lower.includes('точка входа') ||
-        lower.includes('стоп') ||
-        lower.includes('банк') ||
-        lower.includes('марафона') ||
-        lower.includes('позицию') ||
-        lower.includes('маржа') ||
-        lower.includes('риск') ||
-        lower.includes('%')
-      ) {
-        return false;
-      }
+    let i = startIndex + 1;
 
-      const nums = l.match(/[\d.,]+/g); // все блоки из цифр/точек/запятых
-      return nums && nums.length >= 2;  // минимум 2 числа = похоже на линию с тейками
-    });
-  }
-
-  if (tpLine) {
-    if (tpLine.endsWith(".")) {
-      tpLine = tpLine.slice(0, -1);
+    // пока НЕ встретили точку в конце блока
+    while (
+      !tpText.trim().endsWith('.') &&
+      i < lines.length
+    ) {
+      tpText += ' ' + lines[i];
+      i++;
     }
-    const nums = tpLine.match(/[\d.,]+/g) || [];
-    
+
+    const nums = tpText.match(/[\d.,]+/g) || [];    
+
     result.takeProfits = nums
       .map(parseNumber)
-      .filter(v => v !=null)
+      .filter(v => v != null)
       .map(v => v.toString());
 
-    console.log(result.takeProfits)
-
+    console.log(result.takeProfits);
   }
+
 
   // ============================================================
   // 5. BANK (не обязательно)
@@ -174,6 +224,7 @@ async function parseSignalText(text) {
 
 function parseNumber(str) {
   if (!str) return null;
+  if (str) { if (str.endsWith(".")) { str = str.slice(0, -1); }}
   let s = String(str).trim().replace(/\s+/g, '');
   // 27,457.20 -> 27457.20
   if (s.includes('.') && s.includes(',')) {
@@ -206,7 +257,30 @@ async function placeOrder(orderParams) {
     console.log(url)   
     const res = await axios.post(url, null, { headers });
     console.log(res.data);
-    return res.data;
+    return res.data.data.order;
+}
+
+async function buildMarketOrderFromSignal(signal) {
+  if (!signal.symbol || !signal.entry) {
+    throw new Error("Не удалось определить symbol или entry из сигнала");
+  }
+
+  return {
+    symbol: signal.symbol,
+    side: signal.side,               // BUY или SELL
+    positionSide: signal.positionSide, // LONG или SHORT
+    type: "MARKET",
+    //price: signal.entry,
+    // quantity ты решаешь сам — либо фиксированная,
+    // либо на основе signal.allocated, плеча и т.п.
+    // тут поставлю заглушку:
+    quantity: "32",
+    marginType: "CROSSED",
+    timeInForce: "GTC",
+    //takeProfit: signal.takeProfits[0] || undefined,
+    //stopLoss: signal.stopLoss || undefined,
+    clientOrderId: `signal_${Date.now()}`
+  };
 }
 
 async function buildPlaceOrderFromSignal(signal) {
@@ -223,11 +297,11 @@ async function buildPlaceOrderFromSignal(signal) {
     // quantity ты решаешь сам — либо фиксированная,
     // либо на основе signal.allocated, плеча и т.п.
     // тут поставлю заглушку:
-    quantity: "100",
+    quantity: "32",
     marginType: "CROSSED",
     timeInForce: "GTC",
-    takeProfit: signal.takeProfits[0] || undefined,
-    stopLoss: signal.stopLoss || undefined,
+    //takeProfit: signal.takeProfits[0] || undefined,
+    //stopLoss: signal.stopLoss || undefined,
     clientOrderId: `signal_${Date.now()}`
   };
 }
@@ -247,7 +321,8 @@ async function buildEntryOrderFromSignal(signal, options = {}) {
 
   const order = {
     symbol,                  // 'ENA-USDT'
-    side,                    // 'BUY' (если LONG) или 'SELL' (если SHORT)
+    side,       
+    reduceOnly:false,             // 'BUY' (если LONG) или 'SELL' (если SHORT)
     positionSide,            // 'LONG' или 'SHORT'
     type: options.type || 'LIMIT',   // 'LIMIT' или 'MARKET'
     quantity: quantity.toString(),   // общий объём
@@ -282,7 +357,9 @@ function splitQtyForTps(totalQty) {
 }
 
 async function buildTakeProfitOrdersFromSignal(signal, options = {}) {
-  const { symbol, positionSide, takeProfits, quantity } = signal;
+  signal.quantity = 32;
+  let { symbol, positionSide, takeProfits, quantity } = signal;
+  
 
   if (!symbol || !positionSide || !takeProfits || takeProfits.length === 0 || !quantity) {
     return []; // нет тейков или количества — нет ордеров
@@ -307,14 +384,15 @@ async function buildTakeProfitOrdersFromSignal(signal, options = {}) {
     price: tpPrice.toString(),
     quantity: qtyForTp[idx].toString(),
     timeInForce: 'GTC',
-    reduceOnly: true, // важно: чтобы ордер только уменьшал позицию, а не открывал новую
     clientOrderId: `TP${idx + 1}_${Date.now()}`,
   }));
 
   return orders;
 }
 
+
 async function buildStopLossOrderFromSignal(signal, options = {}) {
+  signal.quantity = 32;
   const { symbol, positionSide, stopLoss, quantity } = signal;
   if (!symbol || !positionSide || !stopLoss || !quantity) {
     return null;
@@ -328,8 +406,8 @@ async function buildStopLossOrderFromSignal(signal, options = {}) {
     positionSide,
     type: options.type || 'STOP_MARKET', // зависит от того, как именно BingX ждёт SL
     stopPrice: stopLoss.toString(),      // цена стопа
-    quantity: quantity.toString(),       // закрываем весь объём
-    reduceOnly: true,
+    quantity: quantity.toString(),
+    closePosition: true,        // закрываем весь объём
     clientOrderId: options.clientOrderId || `SL_${Date.now()}`,
     workingType: options.workingType || 'MARK_PRICE', // часто биржи используют MARK_PRICE / LAST_PRICE
   };
@@ -391,7 +469,7 @@ async function closeAllOpenOrders() {
   try {
     const res = await axios.delete(url, { headers });
     console.log("Ответ API:", res.data);
-    return res.data;
+    return res.data.data;
   } catch (err) {
     console.error("Ошибка:", err.response?.data || err.message);
   }
@@ -408,9 +486,54 @@ async function getPublicIP() {
   }
 }
 
-// пример использования
-getPublicIP().then(ip => console.log("Public IP:", ip));
+async function canOpenOrder(symbol, price, quantity) {
+  try {
+    // 🔹 1. Получаем список контрактов — там minNotional
+    const contracts = await axios.get(`${BASE}/openApi/swap/v2/quote/contracts`);
 
+    const info = contracts.data.data.find((c) => c.symbol === symbol);
+    if (!info) throw new Error(`Symbol ${symbol} not found`);
+
+    const minNotional = parseFloat(info.minNotional); // минимум в USDT
+    const notional = price * quantity; // стоимость позиции
+
+    if (notional < minNotional) {
+      return {
+        ok: false,
+        reason: `Position value ${notional.toFixed(
+          2
+        )} USDT < required minimum ${minNotional} USDT`,
+      };
+    }
+
+    // 🔹 2. Проверяем баланс
+    const timestamp = Date.now();
+    const balanceParams = { timestamp };
+    const signedBalance = sign(balanceParams);   
+
+    const balance = await axios.get(
+      `${HOST}/openApi/swap/v2/user/balance?${signedBalance}`,
+      { headers: { "X-BX-APIKEY": KEY } }
+    );
+
+    const availableBalance = parseFloat(balance.data.data.availableBalance);
+
+    if (availableBalance < notional / 10) {
+      // /10 — если будешь ставить плечо 10х (как пример)
+      return {
+        ok: false,
+        reason: `Insufficient balance. Need ~${(
+          notional / 10
+        ).toFixed(2)} USDT, have ${availableBalance} USDT`,
+      };
+    }
+
+    return { ok: true, reason: "Can open order" };
+  } catch (err) {
+    console.log("Error:", err.response?.data || err.message);
+    return { ok: false, reason: "Check failed" };
+  }
+}
 
 
 
@@ -419,10 +542,14 @@ module.exports = {
     parseSignalText,
     buildPlaceOrderFromSignal,
     buildEntryOrderFromSignal,
+    buildMarketOrderFromSignal,
     placeOrder,
     buildTakeProfitOrdersFromSignal,
     buildStopLossOrderFromSignal,
     closeAllPositions,
     closeAllOpenOrders,
-    getPublicIP
-}
+    getPublicIP,
+    canOpenOrder,
+    init,
+    subscribeOrderUpdates
+  }

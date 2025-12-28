@@ -116,40 +116,40 @@ bot.on("photo", async (ctx) => {
             text_from_jpg = await ocrLastImage();
             
         } else {
-            await ctx.reply("Фото старое или уже сохранено.");
+            await ctx.reply("Пока нет новых jpeg сигналов.");
+            return;
         }
+        
+        const signal = await api.parseSignalText(text_from_jpg);
+        //const orderPayload = await api.buildPlaceOrderFromSignal(signal);
+        const orderPayload = await api.buildMarketOrderFromSignal(signal);
+        console.log(signal);
+        console.log(orderPayload); 
+        let status =  await api.placeOrder(orderPayload);
+        if (status.orderId) {
+            console.log('Открыта позиция, номер ордера:', status)
+        
+            let takes_orders = await api.buildTakeProfitOrdersFromSignal(signal, options = {});
+            for (let order of takes_orders) {
+                let order_status = await api.placeOrder(order);
+                await ctx.reply(JSON.stringify(order_status));
+            }
 
-      const signal = await api.parseSignalText(text_from_jpg);
-      const orderPayload = await api.buildPlaceOrderFromSignal(signal);
-      console.log(signal);
-      console.log(orderPayload); 
+            let stop_loss_order = await api.buildStopLossOrderFromSignal (signal, options = {});
+            let order_status = await api.placeOrder(stop_loss_order);
+            await ctx.reply(JSON.stringify(order_status)); 
+        }
+        else 
+            await ctx.reply('Не смогли открыть позицию'); 
+        
 
-      let first_order =  await api.buildEntryOrderFromSignal(signal, options = {});
-      let order_status = await api.placeOrder(first_order);
-      await ctx.reply(JSON.stringify(order_status));
-
-      let takes_orders = await api.buildTakeProfitOrdersFromSignal(signal, options = {});
-      for (let order of takes_orders) {
-        let order_status = await api.placeOrder(order);
-        await ctx.reply(JSON.stringify(order_status));
-      }
-
-      let stop_loss_order = await api.buildStopLossOrderFromSignal (signal, options = {});
-      order_status = await api.placeOrder(stop_loss_order);
-      await ctx.reply(JSON.stringify(order_status));
-
-      //if (order_status == 'FILLED') {
-
-
-
+      
 
     } catch (e) {
         console.error("Ошибка в обработке фото:", e);
         await ctx.reply("❌ Ошибка при обработке фото.");
     }
 });
-
-
 
 // Меню
 const menu = Markup.keyboard([
@@ -163,14 +163,16 @@ bot.start((ctx) => {
 });
 
 // Кнопки
-bot.hears("🔵 Закрыть все позиции", (ctx) => api.closeAllPositions().then((res) => {ctx.reply(res.code)}));
-bot.hears("🟢 Закрыть все ордера", (ctx) => api.closeAllOpenOrders().then((res) => {ctx.reply(res.code)}));
+bot.hears("🔵 Закрыть все позиции", (ctx) => api.closeAllPositions().then((res) => {ctx.reply(JSON.stringify(res))}));
+bot.hears("🟢 Закрыть все ордера", (ctx) => api.closeAllOpenOrders().then((res) => {ctx.reply(JSON.stringify(res))}));
 
 
 
 async function main() {
     console.log("Запуск бота...");
+
     bot.launch();
+    await api.init();
     console.log("🤖 БОТ ЗАПУЩЕН!");
     let ip = await api.getPublicIP();
     console.log(ip);
